@@ -119,6 +119,7 @@ my $fake_mod_dir = File::Spec->catdir(cwd(), 'auto', 'FakeMod');
 
     my $realei = ExtUtils::Installed->new();
     isa_ok( $realei, 'ExtUtils::Installed' );
+    $realei->_load_all_packlists;
     isa_ok( $realei->{Perl}{packlist}, 'ExtUtils::Packlist' );
     is( $realei->{Perl}{version}, $Config{version},
         'new() should set Perl version from %Config' );
@@ -141,6 +142,7 @@ my $fake_mod_dir = File::Spec->catdir(cwd(), 'auto', 'FakeMod');
 
     my $realei = ExtUtils::Installed->new();
     isa_ok( $realei, 'ExtUtils::Installed' );
+    $realei->_load_all_packlists;
     isa_ok( $realei->{Perl}{packlist}, 'ExtUtils::Packlist' );
     is( $realei->{Perl}{version}, $Config{version},
         'new() should set Perl version from %Config' );
@@ -168,6 +170,7 @@ my $fake_mod_dir = File::Spec->catdir(cwd(), 'auto', 'FakeMod');
         'inc_override' => \@inc_override,
     );
     isa_ok( $realei, 'ExtUtils::Installed' );
+    $realei->_load_all_packlists;
     isa_ok( $realei->{Perl}{packlist}, 'ExtUtils::Packlist' );
     is( $realei->{Perl}{version}, 'fake_test_version',
         'new(config_override => HASH) overrides %Config' );
@@ -184,6 +187,7 @@ my $fake_mod_dir = File::Spec->catdir(cwd(), 'auto', 'FakeMod');
         'extra_libs' => [ cwd() ],
     );
     isa_ok( $realei, 'ExtUtils::Installed' );
+    $realei->_load_all_packlists;
     isa_ok( $realei->{Perl}{packlist}, 'ExtUtils::Packlist' );
     ok( exists $realei->{FakeMod}, 
         'new() with extra_libs should find modules with .packlists');
@@ -198,6 +202,7 @@ my $fake_mod_dir = File::Spec->catdir(cwd(), 'auto', 'FakeMod');
 
 # modules
 $ei->{$_} = 1 for qw( abc def ghi );
+$ei->{':private:'}{all_loaded} = 1;
 is( join(' ', $ei->modules()), 'abc def ghi',
     'modules() should return sorted keys' );
 

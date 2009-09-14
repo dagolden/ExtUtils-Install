@@ -166,11 +166,50 @@ sub new {
             @{$self->{':private:'}{EXTRA}}, @{$self->{':private:'}{INC}};
     }
 
-    my @dirs= $self->_fix_dirs(@{$self->{':private:'}{LIBDIRS}});
+    return $self;
+}
 
+sub _load_core_packlist {
+    my ($self) = @_;
     # Read the core packlist
     my $archlib = $self->_fix_dirs($self->{':private:'}{Config}{archlibexp});
     $self->_make_entry("Perl",File::Spec->catfile($archlib, '.packlist'));
+}
+
+sub _lib_dirs {
+    my ($self) = @_;
+    return $self->_fix_dirs(@{$self->{':private:'}{LIBDIRS}});
+}
+
+sub _load_module_packlist {
+    my ($self, $module) = @_;
+    return 1 if $self->{$module};
+    return $self->_load_core_packlist if $module eq 'Perl';
+
+    (my $mod_path = $module) =~ s{::}{/}g;
+    my $mod_file = "$mod_path\.pm";
+    my $archname = $self->{':private:'}{Config}{archname};
+    for my $dir ( $self->_lib_dirs ) {
+        my $packlist = File::Spec->catfile(
+            $dir, $archname, 'auto', $mod_path, ".packlist"
+        );
+        if ( -e $packlist ) {
+            $self->_make_entry($module, $packlist, $mod_file);
+            last;
+        }
+    }
+    Carp::croak("$module is not installed") if (! exists($self->{$module}));
+    return;
+}
+
+sub _load_all_packlists {
+    my ($self) = @_;
+    return if $self->{':private:'}{all_loaded}++;
+
+    $self->_load_core_packlist unless $self->{Perl};
+
+    my @dirs= $self->_lib_dirs;
+    my $archlib = $self->_fix_dirs($self->{':private:'}{Config}{archlibexp});
 
     my $root;
     # Read the module packlists
@@ -198,8 +237,7 @@ sub new {
         next if !-d $root;
         find($sub,$root);
     }
-
-    return $self;
+    return;
 }
 
 # VMS's non-case preserving file-system means the package name can't
@@ -233,6 +271,7 @@ sub _module_name {
 sub modules {
     my ($self) = @_;
     $self= $self->new(default=>1) if !ref $self;
+    $self->_load_all_packlists;
 
     # Bug/feature of sort in scalar context requires this.
     return wantarray
@@ -243,9 +282,9 @@ sub modules {
 sub files {
     my ($self, $module, $type, @under) = @_;
     $self= $self->new(default=>1) if !ref $self;
+    $self->_load_module_packlist($module);
 
     # Validate arguments
-    Carp::croak("$module is not installed") if (! exists($self->{$module}));
     $type = "all" if (! defined($type));
     Carp::croak('type must be "all", "prog" or "doc"')
         if ($type ne "all" && $type ne "prog" && $type ne "doc");
@@ -262,6 +301,7 @@ sub files {
 sub directories {
     my ($self, $module, $type, @under) = @_;
     $self= $self->new(default=>1) if !ref $self;
+    $self->_load_module_packlist($module);
     my (%dirs);
     foreach my $file ($self->files($module, $type, @under)) {
         $dirs{dirname($file)}++;
@@ -272,6 +312,7 @@ sub directories {
 sub directory_tree {
     my ($self, $module, $type, @under) = @_;
     $self= $self->new(default=>1) if !ref $self;
+    $self->_load_module_packlist($module);
     my (%dirs);
     foreach my $dir ($self->directories($module, $type, @under)) {
         $dirs{$dir}++;
@@ -289,27 +330,28 @@ sub directory_tree {
 sub validate {
     my ($self, $module, $remove) = @_;
     $self= $self->new(default=>1) if !ref $self;
-    Carp::croak("$module is not installed") if (! exists($self->{$module}));
+    $self->_load_module_packlist($module);
     return($self->{$module}{packlist}->validate($remove));
 }
 
 sub packlist {
     my ($self, $module) = @_;
     $self= $self->new(default=>1) if !ref $self;
-    Carp::croak("$module is not installed") if (! exists($self->{$module}));
+    $self->_load_module_packlist($module);
     return($self->{$module}{packlist});
 }
 
 sub version {
     my ($self, $module) = @_;
     $self= $self->new(default=>1) if !ref $self;
-    Carp::croak("$module is not installed") if (! exists($self->{$module}));
+    $self->_load_module_packlist($module);
     return($self->{$module}{version});
 }
 
 sub debug_dump {
     my ($self, $module) = @_;
     $self= $self->new(default=>1) if !ref $self;
+    $self->_load_all_packlists;
     local $self->{":private:"}{Config};
     require Data::Dumper;
     print Data::Dumper->new([$self])->Sortkeys(1)->Indent(1)->Dump();
@@ -346,10 +388,12 @@ information from the .packlist files.
 
 =head1 USAGE
 
-The new() function searches for all the installed .packlists on the system, and
-stores their contents. The .packlists can be queried with the functions
-described below. Where it searches by default is determined by the settings found
-in C<%Config::Config>, and what the value is of the PERL5LIB environment variable.
+The new() function returns an ExtUtils::Installed object.  Packlists are
+located lazily and the object stores their contents. The .packlists can be
+queried with the functions described below. Where it searches by default is
+determined by the settings found in C<%Config::Config>, and what the value is
+of the PERL5LIB environment variable.  The packlists are read using the
+L<ExtUtils::Packlist> module.
 
 =head1 METHODS
 
@@ -363,11 +407,9 @@ necessary created using the current processes %Config and @INC.  See the
 
 =item new()
 
-This takes optional named parameters. Without parameters, this
-searches for all the installed .packlists on the system using
-information from C<%Config::Config> and the default module search
-paths C<@INC>. The packlists are read using the
-L<ExtUtils::Packlist> module.
+This takes optional named parameters. Without parameters, this configures the
+object to search using information from C<%Config::Config> and the default
+module search paths C<@INC>. 
 
 If the named parameter C<config_override> is specified,
 it should be a reference to a hash which contains all information
